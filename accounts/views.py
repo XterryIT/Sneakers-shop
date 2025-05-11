@@ -147,7 +147,7 @@ def create_checkout_session(request):
             'price_data': {
                 'currency': 'inr',
                 'product_data': {
-                    'name': 'Order ' + cart.uid,
+                    'name': f'Order {cart.uid}',       # f-string автоматически вызывает str()
                 },
                 'unit_amount': amount,
             },
@@ -249,18 +249,20 @@ def remove_coupon(request, cart_id):
 
 
 # Payment success view
-def success(request):
-    order_id = request.GET.get('order_id')
-    cart = get_object_or_404(Cart, razorpay_order_id=order_id)
 
-    # Mark the cart as paid
+def success(request):
+    session_id = request.GET.get('session_id')
+    cart = get_object_or_404(Cart, user=request.user, is_paid=False)
+
     cart.is_paid = True
     cart.save()
 
-    # Create the order after payment is confirmed
-    order = create_order(cart)
+    order = create_order(cart, order_id=session_id)
 
-    context = {'order_id': order_id, 'order': order}
+    context = {
+        'order_id': session_id,
+        'order': order,
+    }
     return render(request, 'payment_success/payment_success.html', context)
 
 
@@ -372,29 +374,28 @@ def order_history(request):
     return render(request, 'accounts/order_history.html', {'orders': orders})
 
 
-# Create an order view
-def create_order(cart):
+def create_order(cart, order_id=None):
+
     order, created = Order.objects.get_or_create(
         user=cart.user,
-        order_id=cart.razorpay_order_id,
+        order_id=order_id,                
         payment_status="Paid",
         shipping_address=cart.user.profile.shipping_address,
-        payment_mode="Razorpay",
+        payment_mode="Stripe",
         order_total_price=cart.get_cart_total(),
         coupon=cart.coupon,
         grand_total=cart.get_cart_total_price_after_coupon(),
     )
 
-    # Create OrderItem instances for each item in the cart
-    cart_items = CartItem.objects.filter(cart=cart)
-    for cart_item in cart_items:
+    # Переносим товары из корзины в OrderItem
+    for item in cart.cart_items.all():
         OrderItem.objects.get_or_create(
             order=order,
-            product=cart_item.product,
-            size_variant=cart_item.size_variant,
-            color_variant=cart_item.color_variant,
-            quantity=cart_item.quantity,
-            product_price=cart_item.get_product_price()
+            product=item.product,
+            size_variant=item.size_variant,
+            color_variant=item.color_variant,
+            quantity=item.quantity,
+            product_price=item.get_product_price(),
         )
 
     return order
