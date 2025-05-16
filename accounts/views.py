@@ -45,7 +45,7 @@ def login_page(request):
             messages.error(request, 'Account not verified!')
             return HttpResponseRedirect(request.path_info)
 
-        user_obj = authenticate(username=username, password=password)
+        user_obj = authenticate(request=request,username=username, password=password)
         if user_obj:
             login(request, user_obj)
             messages.success(request, 'Login Successfull.')
